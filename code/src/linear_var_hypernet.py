@@ -41,10 +41,11 @@ class VarLayerLinearAppr(nn.Module): # вариационная однослой
         # подсчет дивергенции
         size = self.in_, self.out_
         out = self.out_
+        device = self.mean.const.device
         self.eps_w = t.distributions.Normal(self.mean(l), t.exp(self.log_sigma(l)))
         self.eps_b = t.distributions.Normal(self.mean_b(l),  t.exp(self.log_sigma_b(l)))
-        self.h_w = t.distributions.Normal(t.zeros(size), t.ones(size)*self.prior_sigma)
-        self.h_b = t.distributions.Normal(t.zeros(out), t.ones(out)*self.prior_sigma)                
+        self.h_w = t.distributions.Normal(t.zeros(size, device=device), t.ones(size, device=device)*self.prior_sigma)
+        self.h_b = t.distributions.Normal(t.zeros(out, device=device), t.ones(out, device=device)*self.prior_sigma)                
         k1 = t.distributions.kl_divergence(self.eps_w,self.h_w).sum()        
         k2 = t.distributions.kl_divergence(self.eps_b,self.h_b).sum()        
         return k1+k2            
