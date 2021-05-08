@@ -78,47 +78,85 @@ class PrimaryNetwork(nn.Module):
 
         self.global_avg = nn.AvgPool2d(8)
         self.final = nn.Linear(64,10)
-
+        self.h1_eps = None  # lazy initialization. we check only h1. h2 is initialized at the same time
+        
+        
     def forward(self, x, lam = None):
-
         x = F.relu(self.bn1(self.conv1(x)))
-        for i in range(18):
-            # if i != 15 and i != 17:
-            w1_mean = self.zs_mean[2*i](self.hope1, lam)
-            w2_mean = self.zs_mean[2*i+1](self.hope1, lam)
-            w1_sigma = self.zs_sigma[2*i](self.hope2, lam)
-            w2_sigma = self.zs_sigma[2*i+1](self.hope2, lam)
-            if self.training:
-                self.w1_eps = t.distributions.Normal(w1_mean, t.exp(w1_sigma+0.2))
-                self.w2_eps = t.distributions.Normal(w2_mean, t.exp(w2_sigma+0.2))
-                w1 = self.w1_eps.rsample()
-                w2 = self.w2_eps.rsample()
-            else:
+        if  self.training:
+            # flattening all w1 and w2 into large 1d-tensors (for 1 normal sampling step)
+            w1_mean = []
+            w1_sigma = []
+            w2_mean = []
+            w2_sigma = []
+            
+            # saving start-end and real shape for each tensor in large 1d-tensor
+            starts1 = []
+            ends1 = []
+            sizes1 = []
+            
+            starts2 = []
+            ends2 = []
+            sizes2 = []
+            
+            for i in range(18):
+                w = self.zs_mean[2*i](self.hope1, lam)
+                if len(ends1)==0:
+                    starts1.append(0)
+                else:
+                    starts1.append(ends1[-1])
+                sizes1.append(w.shape)
+                w1_mean += [w.flatten()]
+                ends1.append(starts1[-1] + w1_mean[-1].shape[0])
+                
+                w = self.zs_mean[2*i+1](self.hope2, lam)
+                if len(ends2)==0:
+                    starts2.append(0)
+                else:
+                    starts2.append(ends2[-1])
+                sizes2.append(w.shape)
+                w2_mean += [w.flatten()]
+                ends2.append(starts2[-1] + w2_mean[-1].shape[0])
+                
+                w1_sigma += [self.zs_sigma[2*i](self.hope1, lam).flatten()]
+                w2_sigma += [self.zs_sigma[2*i+1](self.hope2, lam).flatten()]
+            w1_mean_all = t.cat(w1_mean)
+            w2_mean_all = t.cat(w2_mean)
+            w1_sigma_all = t.cat(w1_sigma)
+            w2_sigma_all = t.cat(w2_sigma)
+            self.w1_eps = t.distributions.Normal(w1_mean_all, t.exp(w1_sigma_all+0.2))
+            self.w2_eps = t.distributions.Normal(w2_mean_all, t.exp(w2_sigma_all+0.2))
+            
+            if self.h1_eps is None: # lazy h1/h2 implementation. We need it only once
+                self.h1_eps = t.distributions.Normal(t.zeros_like((w1_mean_all), device=self.device),
+                                               t.ones_like(w1_sigma_all, device=self.device)*self.prior_sigma)
+                self.h2_eps = t.distributions.Normal(t.zeros_like((w2_mean_all), device=self.device),
+                                               t.ones_like(w2_sigma_all, device=self.device)*self.prior_sigma)
+            
+            w1_sample = self.w1_eps.rsample()
+            w2_sample = self.w2_eps.rsample()
+            
+            for i in range(18):
+                w1 = w1_sample[starts1[i]:ends1[i]].view(sizes1[i])
+                w2 = w2_sample[starts2[i]:ends2[i]].view(sizes2[i])
+                x = self.res_net[i](x, w1, w2)
+        else:   
+            for i in range(18):
+                # if i != 15 and i != 17:
+                w1_mean = self.zs_mean[2*i](self.hope1, lam)
+                w2_mean = self.zs_mean[2*i+1](self.hope1, lam)
+
                 w1 = w1_mean
                 w2 = w2_mean
-            x = self.res_net[i](x, w1, w2)
+                x = self.res_net[i](x, w1, w2)
 
         x = self.global_avg(x)
         x = self.final(x.view(-1,64))
-
         return x
     
     def KLD(self, l):
         # подсчет дивергенции
-        device = self.device
-        k = 0
-        for i in range(18):
-            # if i != 15 and i != 17:
-            w1_mean = self.zs_mean[2*i](self.hope1, l)
-            w2_mean = self.zs_mean[2*i+1](self.hope1, l)
-            w1_sigma = self.zs_sigma[2*i](self.hope2, l)
-            w2_sigma = self.zs_sigma[2*i+1](self.hope2, l)
-            self.h_w1 = t.distributions.Normal(t.zeros_like((w1_mean), device=device),
-                                               t.ones_like(t.exp(w1_sigma+0.2), device=device)*self.prior_sigma)
-            self.h_w2 = t.distributions.Normal(t.zeros_like((w2_mean), device=device),
-                                               t.ones_like(t.exp(w2_sigma+0.2), device=device)*self.prior_sigma)
-            self.w1_eps = t.distributions.Normal(w1_mean, t.exp(w1_sigma+0.2))
-            self.w2_eps = t.distributions.Normal(w2_mean, t.exp(w2_sigma+0.2))
-            k += t.distributions.kl_divergence(self.w1_eps, self.h_w1).sum()
-            k += t.distributions.kl_divergence(self.w2_eps, self.h_w2).sum()
+        
+        k = t.distributions.kl_divergence(self.w1_eps, self.h1_eps).sum()
+        k += t.distributions.kl_divergence(self.w2_eps, self.h2_eps).sum()
         return k
