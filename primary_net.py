@@ -89,8 +89,8 @@ class PrimaryNetwork(nn.Module):
             w1_sigma = self.zs_sigma[2*i](self.hope2, lam)
             w2_sigma = self.zs_sigma[2*i+1](self.hope2, lam)
             if self.training:
-                self.w1_eps = t.distributions.Normal(w1_mean, t.exp(w1_sigma))
-                self.w2_eps = t.distributions.Normal(w2_mean, t.exp(w2_sigma))
+                self.w1_eps = t.distributions.Normal(w1_mean, t.exp(w1_sigma+0.2))
+                self.w2_eps = t.distributions.Normal(w2_mean, t.exp(w2_sigma+0.2))
                 w1 = self.w1_eps.rsample()
                 w2 = self.w2_eps.rsample()
             else:
@@ -113,12 +113,12 @@ class PrimaryNetwork(nn.Module):
             w2_mean = self.zs_mean[2*i+1](self.hope1, l)
             w1_sigma = self.zs_sigma[2*i](self.hope2, l)
             w2_sigma = self.zs_sigma[2*i+1](self.hope2, l)
-            self.h_w1 = t.distributions.Normal(t.zeros_like(t.exp(w1_mean), device=device),
-                                               t.ones_like(t.exp(w1_sigma), device=device)*self.prior_sigma)
-            self.h_w2 = t.distributions.Normal(t.zeros_like(t.exp(w2_mean), device=device),
-                                               t.ones_like(t.exp(w2_sigma), device=device)*self.prior_sigma)
-            self.w1_eps = t.distributions.Normal(w1_mean, t.exp(w1_sigma))
-            self.w2_eps = t.distributions.Normal(w2_mean, t.exp(w2_sigma))
+            self.h_w1 = t.distributions.Normal(t.zeros_like((w1_mean), device=device),
+                                               t.ones_like(t.exp(w1_sigma+0.2), device=device)*self.prior_sigma)
+            self.h_w2 = t.distributions.Normal(t.zeros_like((w2_mean), device=device),
+                                               t.ones_like(t.exp(w2_sigma+0.2), device=device)*self.prior_sigma)
+            self.w1_eps = t.distributions.Normal(w1_mean, t.exp(w1_sigma+0.2))
+            self.w2_eps = t.distributions.Normal(w2_mean, t.exp(w2_sigma+0.2))
             k += t.distributions.kl_divergence(self.w1_eps, self.h_w1).sum()
             k += t.distributions.kl_divergence(self.w2_eps, self.h_w2).sum()
         return k
