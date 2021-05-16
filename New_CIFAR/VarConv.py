@@ -1,7 +1,8 @@
 import torch as t 
 import torch.nn as nn
 import torch.nn.functional as F
-
+import math
+import torch.nn.init as init
 
 
 class VarConv(nn.Module):
@@ -12,6 +13,19 @@ class VarConv(nn.Module):
         self.mean_b = LinearApprNet(out_channels) # то же самое для свободного коэффициента
         self.log_sigma_b = LinearApprNet( out_channels)
      
+        init.kaiming_uniform_(self.mean.const, a=math.sqrt(5))
+        fan_in, _ = init._calculate_fan_in_and_fan_out(self.mean.const)
+        bound = 1 / math.sqrt(fan_in)
+        init.uniform_(self.mean_b.const, -bound, bound)
+        
+        
+        init.kaiming_uniform_(self.mean.const2, a=math.sqrt(5))
+        fan_in, _ = init._calculate_fan_in_and_fan_out(self.mean.const2)
+        bound = 1 / math.sqrt(fan_in)
+        init.uniform_(self.mean_b.const2, -bound, bound)
+        
+        
+            
         self.log_sigma.const.data*= 0 # забьем константу нужными нам значениями
         self.log_sigma.const.data+= init_log_sigma
      
@@ -38,7 +52,10 @@ class VarConv(nn.Module):
         else:  # во время контроля - смотрим средние значения параметра        
             w = self.mean(l) 
             b = self.mean_b(l)
-            
+        
+        #w = self.mean(l)
+        #b = self.mean_b(l)
+        
         # функция активации 
         return F.conv2d(x, w, b, self.stride, self.padding, self.dilation, self.groups)
 
@@ -46,10 +63,11 @@ class VarConv(nn.Module):
         # подсчет дивергенции
         out = self.out_
         device = self.mean.const.device
+        
         self.eps_w = t.distributions.Normal(self.mean(l), t.exp(self.log_sigma(l)))
         self.eps_b = t.distributions.Normal(self.mean_b(l),  t.exp(self.log_sigma_b(l)))
-        self.h_w = t.distributions.Normal(t.zeros(self.size_m, device=device), t.ones(self.size_m, device=device)*self.prior_sigma*l)
-        self.h_b = t.distributions.Normal(t.zeros(out, device=device), t.ones(out, device=device)*self.prior_sigma*l)                
+        self.h_w = t.distributions.Normal(t.zeros(self.size_m, device=device), t.ones(self.size_m, device=device)*self.prior_sigma)
+        self.h_b = t.distributions.Normal(t.zeros(out, device=device), t.ones(out, device=device)*self.prior_sigma)                
         k1 = t.distributions.kl_divergence(self.eps_w,self.h_w).sum()        
         k2 = t.distributions.kl_divergence(self.eps_b,self.h_b).sum()        
         return k1+k2            
@@ -102,6 +120,7 @@ class VarConvNet(nn.Module):
                              init_log_sigma = init_log_sigma, prior_sigma = prior_sigma)
         self.conv4 = VarConv(in_channels=192, out_channels=256, H = 3, W = 3, padding=(1,1),
                              init_log_sigma = init_log_sigma, prior_sigma = prior_sigma)
+        
         self.pool = nn.MaxPool2d(2,2)
         self.fc1 = nn.Linear(in_features=8*8*256, out_features=512)
         self.fc2 = nn.Linear(in_features=512, out_features=64)
@@ -132,10 +151,3 @@ class VarConvNet(nn.Module):
         k += self.conv4.KLD(lam)
         return k
     
-
-
-# In[ ]:
-
-
-
-
