@@ -31,15 +31,19 @@ class VarLayer(nn.Module): # вариационная однослойная с�
         # функция активации 
         return self.act(t.matmul(x, w)+b)
 
-    def KLD(self):        
+    def KLD(self, l, rep = False):        
         # подсчет дивергенции
         size = self.in_, self.out_
         out = self.out_
         device = self.mean.device
         self.eps_w = t.distributions.Normal(self.mean, t.exp(self.log_sigma))
         self.eps_b = t.distributions.Normal(self.mean_b,  t.exp(self.log_sigma_b))
-        self.h_w = t.distributions.Normal(t.zeros(size, device=device), self.prior_sigma * t.ones(size, device=device))
-        self.h_b = t.distributions.Normal(t.zeros(out, device=device), self.prior_sigma * t.ones(out, device=device))                
+        if rep:
+            self.h_w = t.distributions.Normal(t.zeros(size, device=device), l*self.prior_sigma * t.ones(size, device=device))
+            self.h_b = t.distributions.Normal(t.zeros(out, device=device), l*self.prior_sigma * t.ones(out, device=device))  
+        else:
+            self.h_w = t.distributions.Normal(t.zeros(size, device=device), self.prior_sigma * t.ones(size, device=device))
+            self.h_b = t.distributions.Normal(t.zeros(out, device=device), self.prior_sigma * t.ones(out, device=device))
         k1 = t.distributions.kl_divergence(self.eps_w,self.h_w).sum()        
         k2 = t.distributions.kl_divergence(self.eps_b,self.h_b).sum()        
         return k1+k2
