@@ -31,19 +31,17 @@ class VarLayer(nn.Module): # вариационная однослойная с�
         # функция активации 
         return self.act(t.matmul(x, w)+b)
 
-    def KLD(self, l, rep = False):        
+    def KLD(self,  prior_scale=1.0):
+      
         # подсчет дивергенции
         size = self.in_, self.out_
         out = self.out_
         device = self.mean.device
         self.eps_w = t.distributions.Normal(self.mean, t.exp(self.log_sigma))
         self.eps_b = t.distributions.Normal(self.mean_b,  t.exp(self.log_sigma_b))
-        if rep:
-            self.h_w = t.distributions.Normal(t.zeros(size, device=device), l*self.prior_sigma * t.ones(size, device=device))
-            self.h_b = t.distributions.Normal(t.zeros(out, device=device), l*self.prior_sigma * t.ones(out, device=device))  
-        else:
-            self.h_w = t.distributions.Normal(t.zeros(size, device=device), self.prior_sigma * t.ones(size, device=device))
-            self.h_b = t.distributions.Normal(t.zeros(out, device=device), self.prior_sigma * t.ones(out, device=device))
+     
+        self.h_w = t.distributions.Normal(t.zeros(size, device=device), prior_scale*self.prior_sigma * t.ones(size, device=device))
+        self.h_b = t.distributions.Normal(t.zeros(out, device=device), prior_scale*self.prior_sigma * t.ones(out, device=device))  
         k1 = t.distributions.kl_divergence(self.eps_w,self.h_w).sum()        
         k2 = t.distributions.kl_divergence(self.eps_b,self.h_b).sum()        
         return k1+k2
@@ -52,13 +50,13 @@ class VarLayer(nn.Module): # вариационная однослойная с�
 
 class VarNet(nn.Sequential):    
     # класс-обертка на случай, если у нас многослойная нейронная сеть
-    def KLD(self, lam = None):
+    def KLD(self, lam = None, prior_scale = 1.0):
         k = 0
         for l in self: 
             if lam is None:
-                k+=l.KLD()
+                k+=l.KLD(prior_scale = prior_scale)
             else:
-                k+=l.KLD(lam)
+                k+=l.KLD(lam, prior_scale = prior_scale)
                 
         return k
     
